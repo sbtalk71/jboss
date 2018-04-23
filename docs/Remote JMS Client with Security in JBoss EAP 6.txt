@@ -1,0 +1,470 @@
+Remote JMS Client with Security in JBoss EAP 6
+Background
+We want to write a remote JMS client for the following MDB. And we are using JBoss EAP 6 standalone-full.xml, i.e. we are using the built in HornetQ in JBoss.
+
+?
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+41
+42
+43
+44
+45
+46
+47
+48
+49
+50
+51
+52
+53
+54
+55
+56
+57
+package se.magnuskkarlsson.example.ejb;
+ 
+import java.security.Principal;
+import java.util.logging.Logger;
+ 
+import javax.annotation.Resource;
+import javax.annotation.security.PermitAll;
+import javax.annotation.security.RunAs;
+import javax.ejb.ActivationConfigProperty;
+import javax.ejb.MessageDriven;
+import javax.ejb.MessageDrivenContext;
+import javax.inject.Inject;
+import javax.jms.JMSException;
+import javax.jms.Message;
+import javax.jms.MessageListener;
+import javax.jms.TextMessage;
+import javax.security.auth.Subject;
+import javax.security.jacc.PolicyContext;
+ 
+@MessageDriven(activationConfig = {
+        @ActivationConfigProperty(propertyName = "destinationType", propertyValue = "javax.jms.Queue"),
+        @ActivationConfigProperty(propertyName = "destination", propertyValue = "jms/queue/javaEE6SecurityQueue") })
+@RunAs("ROLE_ADMIN")
+// @org.jboss.ejb3.annotation.RunAsPrincipal("admin") vs [WEB-INF|META-INF]/jboss-ejb3.xml
+// @org.jboss.ejb3.annotation.SecurityDomain("java-ee6-security") vs [WEB-INF|META-INF]/jboss-ejb3.xml
+public class EchoMDB implements MessageListener {
+ 
+    private Logger log = Logger.getLogger(EchoMDB.class.getName());
+ 
+    @Resource
+    private MessageDrivenContext messageDrivenContext;
+ 
+    @PermitAll
+    @Override
+    public void onMessage(Message message) {
+        try {
+            if (message instanceof TextMessage) {
+                log.info("MESSAGE BEAN: Message received: " + ((TextMessage) message).getText());
+ 
+                // will always return "anonymous" when placed inside the MDB
+                Principal principal = messageDrivenContext.getCallerPrincipal();
+                log.info("Principal : " + principal);
+ 
+                // will always return "anonymous" when placed inside the MDB
+                Subject caller = (Subject) PolicyContext.getContext("javax.security.auth.Subject.container");
+                log.info("Caller : " + caller);
+            } else {
+                log.warning("Message of wrong type: " + message.getClass().getName());
+            }
+        } catch (JMSException e) {
+            e.printStackTrace();
+            messageDrivenContext.setRollbackOnly();
+        } catch (Throwable te) {
+            te.printStackTrace();
+        }
+    }
+}
+Remote JMS Client
+To this to work we need a separate maven module that holds the JMS client and have no maven dependency to javax:javaee-api or any other JMS dependency.
+
+Then we need to add $JBOSS_HOME/bin/client/jboss-client.jar to our maven module. This jar file contains all the jboss remoting, jms api and hornetq jms implementation for connection factory and queue.
+
+?
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+41
+42
+43
+44
+45
+46
+47
+48
+49
+50
+51
+52
+53
+54
+55
+56
+57
+58
+package se.magnuskkarlsson.example.mdb;
+ 
+import java.util.Properties;
+ 
+import javax.jms.Connection;
+import javax.jms.ConnectionFactory;
+import javax.jms.MessageProducer;
+import javax.jms.Queue;
+import javax.jms.Session;
+import javax.naming.Context;
+import javax.naming.InitialContext;
+ 
+public class EchoMDBTest {
+ 
+    public static void main(String[] args) throws Exception {
+        InitialContext initialContext = null;
+        Connection connection = null;
+        try {
+            Properties jndiProps = new Properties();
+            jndiProps.put(Context.INITIAL_CONTEXT_FACTORY, "org.jboss.naming.remote.client.InitialContextFactory");
+            jndiProps.put("java.naming.factory.url.pkgs", "org.jboss.ejb.client.naming");
+            jndiProps.put(Context.PROVIDER_URL, "remote://127.0.0.1:4447");
+            // credentials remoting
+            jndiProps.put(Context.SECURITY_PRINCIPAL, "remote");
+            jndiProps.put(Context.SECURITY_CREDENTIALS, "ch5nge!t");
+            initialContext = new InitialContext(jndiProps);
+ 
+            ConnectionFactory connectionFactory = (ConnectionFactory) initialContext
+                    .lookup("jms/RemoteConnectionFactory");
+            // credentials messaging
+            connection = connectionFactory.createConnection("remote", "ch5nge!t");
+            Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+ 
+            Queue queue = (Queue) initialContext.lookup("jms/queue/javaEE6SecurityQueue");
+            MessageProducer messageProducer = session.createProducer(queue);
+            connection.start();
+ 
+            messageProducer.send(session.createTextMessage("Hello from " + EchoMDBTest.class.getName()));
+            System.out.println("SUCCESSFULLY SENT");
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+            throw e;
+        } finally {
+            if (initialContext != null) {
+                try {
+                    initialContext.close();
+                } catch (Exception IGNORE) {
+                }
+            }
+            if (connection != null) {
+                try {
+                    connection.close();
+                } catch (Exception IGNORE) {
+                }
+            }
+        }
+    }
+}
+Setting up HornetQ Queue
+?
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+<subsystem xmlns="urn:jboss:domain:messaging:1.4">
+    <hornetq-server>
+        ...
+        <jms-connection-factories>
+            ...
+            <connection-factory name="RemoteConnectionFactory">
+                <connectors>
+                    <connector-ref connector-name="netty"/>
+                </connectors>
+                <entries>
+                    <entry name="java:jboss/exported/jms/RemoteConnectionFactory"/>
+                </entries>
+            </connection-factory>
+        </jms-connection-factories>
+        ...
+        <jms-destinations>
+            ...
+            <jms-queue name="javaEE6SecurityQueue">
+                <entry name="java:jboss/exported/jms/queue/javaEE6SecurityQueue"/>
+            </jms-queue>
+        </jms-destinations>
+    </hornetq-server>
+</subsystem>
+NOTE: All JMS instances that are to be remote accessible must be prefixed with 'java:jboss/exported/'. In your MDB or JMS client code that prefix is NOT used.
+
+Remoting and HornetQ Security
+All code are now in place and queue configuration done. Now we need to understand how the clients calls HornetQ.
+
+First is a remote JNDI lookup done, which goes through jboss remoting.
+
+?
+1
+2
+3
+<subsystem xmlns="urn:jboss:domain:remoting:1.2">
+    <connector name="remoting-connector" socket-binding="remoting" security-realm="ApplicationRealm"/>
+</subsystem>
+The jboss remoting is using security-realm="ApplicationRealm".
+
+?
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+<management>
+    <security-realms>
+        ...
+        <security-realm name="ApplicationRealm">
+            <authentication>
+                <local default-user="$local" allowed-users="*" skip-group-loading="true"/>
+                <properties path="application-users.properties" relative-to="jboss.server.config.dir"/>
+            </authentication>
+            <authorization>
+                <properties path="application-roles.properties" relative-to="jboss.server.config.dir"/>
+            </authorization>
+        </security-realm>
+    </security-realms>
+    ...
+</management>
+Which default uses users and roles from properties file. Those are created with add-user.sh.
+
+?
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+$ ~/bin/jboss-eap-6.4.0/bin$ ./add-user.sh 
+ 
+What type of user do you wish to add? 
+ a) Management User (mgmt-users.properties) 
+ b) Application User (application-users.properties)
+(a): b
+ 
+Enter the details of the new user to add.
+Using realm 'ApplicationRealm' as discovered from the existing property files.
+Username : remote
+Password requirements are listed below. To modify these restrictions edit the add-user.properties configuration file.
+ - The password must not be one of the following restricted values {root, admin, administrator}
+ - The password must contain at least 8 characters, 1 alphabetic character(s), 1 digit(s), 1 non-alphanumeric symbol(s)
+ - The password must be different from the username
+Password : <ch5nge!t>
+Re-enter Password : <ch5nge!t>
+What groups do you want this user to belong to? (Please enter a comma separated list, or leave blank for none)[  ]: guest
+About to add user 'remote' for realm 'ApplicationRealm'
+Is this correct yes/no? yes
+Added user 'remote' to file '/home/magnus/bin/jboss-eap-6.4.0/standalone/configuration/application-users.properties'
+Added user 'remote' to file '/home/magnus/bin/jboss-eap-6.4.0/domain/configuration/application-users.properties'
+Added user 'remote' with groups guest to file '/home/magnus/bin/jboss-eap-6.4.0/standalone/configuration/application-roles.properties'
+Added user 'remote' with groups guest to file '/home/magnus/bin/jboss-eap-6.4.0/domain/configuration/application-roles.properties'
+Is this new user going to be used for one AS process to connect to another AS process? 
+e.g. for a slave host controller connecting to the master or for a Remoting connection for server to server EJB calls.
+yes/no? no
+</ch5nge!t></ch5nge!t>
+After the remote JNDI lookup is a JMS javax.jms.Connection made. HornetQ default security domain is not default visible in the standalone-full.xml, but can be read with jboss-cli.sh.
+
+?
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+$ ~/bin/jboss-eap-6.4.0/bin$ ./jboss-cli.sh -c
+[standalone@localhost:9999 /] /subsystem=messaging:read-resource(include-defaults=true, include-runtime=true, recursive=true)
+{
+    "outcome" => "success",
+    "result" => {
+        "hornetq-server" => {"default" => {
+...
+            "security-domain" => "other",
+            "security-enabled" => true,
+...
+So HornetQ is using default security domain 'other', which is using the 'ApplicationRealm', that we already had setup.
+
+?
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+<subsystem xmlns="urn:jboss:domain:security:1.2">
+    <security-domains>
+        <security-domain name="other" cache-type="default">
+            <authentication>
+                <login-module code="Remoting" flag="optional">
+                    <module-option name="password-stacking" value="useFirstPass"/>
+                </login-module>
+                <login-module code="RealmDirect" flag="required">
+                    <module-option name="password-stacking" value="useFirstPass"/>
+                </login-module>
+            </authentication>
+        </security-domain>
+        ...
+    </security-domains>
+</subsystem>
+So now we are ready to run the client and the server logs looks like.
+
+?
+1
+2
+3
+4
+5
+6
+7
+8
+9
+$ ./standalone.sh -c standalone-full.xml
+...
+00:21:25,744 INFO  [se.magnuskkarlsson.example.ejb.EchoMDB] (Thread-0 (HornetQ-client-global-threads-1965998011)) MESSAGE BEAN: Message received: Hello from se.magnuskkarlsson.example.mdb.EchoMDBTest
+00:21:25,746 INFO  [se.magnuskkarlsson.example.ejb.EchoMDB] (Thread-0 (HornetQ-client-global-threads-1965998011)) Principal : anonymous
+00:21:25,746 INFO  [se.magnuskkarlsson.example.ejb.EchoMDB] (Thread-0 (HornetQ-client-global-threads-1965998011)) Caller : Subject:
+ Principal: anonymous
+ 
+00:21:25,749 INFO  [se.magnuskkarlsson.example.ejb.HelloSLSB] (Thread-0 (HornetQ-client-global-threads-1965998011))  *** helloAdmin from EJB : [roles=[ROLE_ADMIN],principal=admin]
+00:21:25,750 INFO  [se.magnuskkarlsson.example.ejb.EchoMDB] (Thread-0 (HornetQ-client-global-threads-1965998011)) Hello fr

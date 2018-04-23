@@ -1,0 +1,10 @@
+.standalone.sh -c standalone-full.xml -b 10.0.2.15 -bmanagement 10.0.2.15
+
+
+jboss.socket.binding.port-offset
+
+./standalone.sh -c standalone-ha.xml -b 10.10.10.10 -bmanagement 10.10.10.10  -u 230.0.0.4 -Djboss.server.base.dir=../standalone-node1 -Djboss.node.name=node1 -Djboss.socket.binding.port-offset=100
+
+./standalone.sh -c standalone-full.xml -b 10.0.2.15 -bmanagement 10.0.2.15 -Djboss.server.base.dir=../standalone1 -Djboss.node.name=node1 -Djboss.socket.binding.port-offset=100
+
+./standalone.sh -c standalone-full.xml -b 10.0.2.15 -bmanagement 10.0.2.15 -Djboss.server.base.dir=../standalone2 -Djboss.node.name=node1 -Djboss.socket.binding.port-offset=200

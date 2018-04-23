@@ -1,0 +1,23 @@
+JMS JNDI Applicable for Remote JMS Clients Only
+For public access of JMS resources the JNDI Entry should be
+java:jboss/exported/<jndi Entry>
+
+example:
+java:jboss/exported/queue/DemoQueue
+
+For MDB Specify the full path for the queue in ActivationCOnfig as given below:
+@MessageDriven(activationConfig = {
+		@ActivationConfigProperty(propertyName = "destinationType", propertyValue = "javax.jms.Queue"),
+		@ActivationConfigProperty(propertyName = "destination", propertyValue = "java:jboss/exported/queue/DemoQueue"),
+		@ActivationConfigProperty(propertyName = "user", propertyValue = "jmsuser"),
+		@ActivationConfigProperty(propertyName = "password", propertyValue = "welcome@1"),
+		@ActivationConfigProperty(propertyName = "reconnectAttempts", propertyValue = "-1"),
+		@ActivationConfigProperty(propertyName = "setupAttempts", propertyValue = "-1") })
+
+
+In remote JMS Clients the object which is bound as java:jboss/exported/<JNDI Name> will be accessible as 
+<JNDI Name>
+
+like if you have mad an entry as java:jboss/exported/queue/DemoQueue
+your lookup code should be 
+ctx.lookup("queue/DemoQueue");
