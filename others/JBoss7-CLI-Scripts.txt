@@ -1,0 +1,37 @@
+JBoss7 CLI Scripts
+1.Deploy Application
+2. List deployed applications
+3. Remove Default Datasource and Driver
+data-source remove --name=ExampleDS
+/subsystem=datasources/jdbc-driver=h2:remove
+
+4.Add a New JDBC Driver
+/subsystem=datasources/jdbc-driver=postgresql:add(driver-name=postgresql,driver-module-name=org.postgresql.jdbc)
+5.Add a New Datasource
+data-source add \
+> --name=ApplicationDS \
+> --driver-name=postgresql \
+> --connection-url=jdbc:postgresql://localhost:5432/DemoDB \
+> --jndi-name=java:jboss/jdbc/ApplicationDS \
+> --user-name=demouser \
+> --password=password \
+> --use-ccm=false \
+> --max-pool-size=25 \
+> --blocking-timeout-wait-millis=5000 \
+> --new-connection-sql="set datestyle = ISO, European;"
+
+data-source enable --name=ApplicationDS
+
+6.Add Connection Factory
+connection-factory add --name=MyRemoteConnectionFactory --entries=java:jboss/exported/jms/mycf1 --connector={netty=>undefine}
+
+7.Add JMS Queue
+jms-queue add --queue-address=myQueue1 --entries=java:jboss/exported/jms/demoQueue1
+
+8.Add JMS Topic
+ jms-topic add --topic-address=myTopic1 --entries=java:jboss/exported/jms/demoTopic1
+ 
+9. Security Configuration
+10. Add System Properties
+11. Get Runtime Information
+12. start and stop servers
