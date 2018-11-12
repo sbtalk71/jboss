@@ -1,4 +1,4 @@
-.standalone.sh -c standalone-full.xml -b 10.0.2.15 -bmanagement 10.0.2.15
+./standalone.sh -c standalone-full.xml -b 10.0.2.15 -bmanagement 10.0.2.15
 
 
 jboss.socket.binding.port-offset
