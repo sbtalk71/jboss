@@ -13,5 +13,5 @@ CLI Script for SSL Configuration
 
 /core-service=management/security-realm=SSLRealm/server-identity=ssl:add(keystore-path="server.keystore", keystore-relative-to="jboss.server.config.dir", keystore-password="secret")
 
-/subsystem=undertow/server=default-server/https-listener=default-https:write-attribute(name=security-realm,value=SSLRealm)
+/subsystem=undertow/server=default-server/https-listener=https:write-attribute(name=security-realm,value=SSLRealm)
 
